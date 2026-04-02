@@ -25,6 +25,7 @@
       --gray-900: #111827;
       --gray-700: #374151;
       --gray-500: #6b7280;
+      --gray-400: #9ca3af;
       --gray-300: #d1d5db;
       --gray-200: #e5e7eb;
       --gray-100: #f3f4f6;
@@ -286,6 +287,29 @@
       background: var(--blue-100);
       color: var(--blue-700);
     }
+    .note-tag-deleted {
+      background: var(--red-100);
+      color: var(--red-600);
+    }
+    .note-card.deleted-note {
+      opacity: 0.6;
+      border-left: 3px solid var(--red-600);
+    }
+    .note-delete-btn {
+      background: none;
+      border: none;
+      color: var(--gray-400);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      line-height: 1;
+      transition: all 0.15s;
+    }
+    .note-delete-btn:hover {
+      background: var(--red-100);
+      color: var(--red-600);
+    }
     .note-card-photo {
       margin-top: 10px;
       border-radius: 8px;
@@ -475,9 +499,67 @@
       max-height: 95%;
       object-fit: contain;
     }
+
+    /* Splash screen */
+    .splash-screen {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, #1d4ed8 0%, #2563eb 40%, #3b82f6 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+    .splash-screen.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .splash-icon {
+      width: 100px;
+      height: 100px;
+      border-radius: 22px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      margin-bottom: 20px;
+      animation: splashPulse 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes splashPulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.04); }
+    }
+    .splash-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: white;
+      letter-spacing: -0.5px;
+    }
+    .splash-subtitle {
+      font-size: 14px;
+      color: rgba(255,255,255,0.8);
+      margin-top: 4px;
+      font-weight: 500;
+    }
+    .splash-loader {
+      margin-top: 32px;
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255,255,255,0.25);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
   </style>
 </head>
 <body>
+
+  <!-- SPLASH SCREEN -->
+  <div id="splashScreen" class="splash-screen">
+    <img src="icon-192.png" alt="Field Intel" class="splash-icon">
+    <div class="splash-title">Field Intel</div>
+    <div class="splash-subtitle">Agility Ortho</div>
+    <div class="splash-loader"></div>
+  </div>
 
   <!-- LOGIN SCREEN -->
   <div id="loginScreen" class="login-screen">
@@ -549,6 +631,7 @@
               <span class="tag-chip" data-tag="Competitive Intel" onclick="toggleTag(this)">Competitive Intel</span>
               <span class="tag-chip" data-tag="Product Interest" onclick="toggleTag(this)">Product Interest</span>
               <span class="tag-chip" data-tag="Issue / Complaint" onclick="toggleTag(this)">Issue / Complaint</span>
+              <span class="tag-chip" data-tag="Observation" onclick="toggleTag(this)">Observation</span>
             </div>
           </div>
 
@@ -590,6 +673,7 @@
           <span class="filter-chip" data-filter="Competitive Intel" onclick="filterNotes('Competitive Intel', this)">Competitive Intel</span>
           <span class="filter-chip" data-filter="Product Interest" onclick="filterNotes('Product Interest', this)">Product Interest</span>
           <span class="filter-chip" data-filter="Issue / Complaint" onclick="filterNotes('Issue / Complaint', this)">Issue / Complaint</span>
+          <span class="filter-chip" data-filter="Observation" onclick="filterNotes('Observation', this)">Observation</span>
         </div>
         <div id="notesFeed"></div>
       </div>
@@ -652,6 +736,13 @@ let highlightIndex = -1;
 // ============================================================
 // AUTH — Supabase Email OTP
 // ============================================================
+function dismissSplash() {
+  const splash = document.getElementById('splashScreen');
+  if (!splash) return;
+  splash.classList.add('fade-out');
+  setTimeout(() => splash.remove(), 600);
+}
+
 async function init() {
   showLoading(true);
 
@@ -661,9 +752,11 @@ async function init() {
   if (session) {
     authUser = session.user;
     await loadRepsAndLogin();
+    dismissSplash();
   } else {
     showLoading(false);
     showStep1();
+    dismissSplash();
   }
 
   // Listen for auth state changes
@@ -1053,7 +1146,14 @@ async function loadNotes() {
 
 function renderNotesFeed(filterTag = 'all') {
   const container = document.getElementById('notesFeed');
+  const isOwner = currentUser.role === 'Owner';
   let filtered = allNotes;
+
+  // Non-owners don't see deleted notes
+  if (!isOwner) {
+    filtered = filtered.filter(n => !n.deleted_at);
+  }
+
   if (filterTag !== 'all') {
     filtered = filtered.filter(n => n.tags && n.tags.includes(filterTag));
   }
@@ -1069,12 +1169,24 @@ function renderNotesFeed(filterTag = 'all') {
     const surgeonDisplay = surgeon ? (surgeon.last_name + ', ' + surgeon.first_name + (surgeon.credential ? ', ' + surgeon.credential : '')) : '';
     const hospital = surgeon?.primary_hospital || '';
     const dateStr = formatDate(n.note_date);
+    const isDeleted = !!n.deleted_at;
+    const canDelete = !isDeleted && (n.rep_id === currentUser.id || isOwner);
+
+    // Find who deleted it (for owner view)
+    let deletedByName = '';
+    if (isDeleted && isOwner) {
+      const deleter = allReps.find(r => r.id === n.deleted_by_rep_id);
+      deletedByName = deleter ? deleter.name.split(' ')[0] : 'Unknown';
+    }
 
     return `
-      <div class="note-card">
+      <div class="note-card${isDeleted ? ' deleted-note' : ''}">
         <div class="note-card-header">
           <div class="note-card-subject">${escHtml(surgeonDisplay || n.subject_text)}</div>
-          <div class="note-card-date">${dateStr}</div>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <div class="note-card-date">${dateStr}</div>
+            ${canDelete ? `<button class="note-delete-btn" onclick="softDeleteNote('${n.id}')" title="Delete note">✕</button>` : ''}
+          </div>
         </div>
         <div class="note-card-meta">
           ${escHtml(authorName)}${hospital ? ' · ' + escHtml(hospital) : ''}
@@ -1082,11 +1194,10 @@ function renderNotesFeed(filterTag = 'all') {
         <div class="note-card-body">${escHtml(n.note_body)}</div>
         ${n.next_action ? `<div style="margin-top:8px;padding:8px 12px;background:var(--orange-100);border-radius:8px;font-size:13px;color:var(--orange-500);font-weight:600;">Next: ${escHtml(n.next_action)}</div>` : ''}
         ${n.photo_url ? `<div class="note-card-photo"><img src="${escHtml(n.photo_url)}" onclick="viewPhoto('${escHtml(n.photo_url)}')" alt="Photo"></div>` : ''}
-        ${n.tags && n.tags.length ? `
-          <div class="note-card-tags">
-            ${n.tags.map(t => `<span class="note-tag">${escHtml(t)}</span>`).join('')}
-          </div>
-        ` : ''}
+        <div class="note-card-tags">
+          ${n.tags && n.tags.length ? n.tags.map(t => `<span class="note-tag">${escHtml(t)}</span>`).join('') : ''}
+          ${isDeleted && isOwner ? `<span class="note-tag note-tag-deleted">Deleted by ${escHtml(deletedByName)}</span>` : ''}
+        </div>
       </div>
     `;
   }).join('');
@@ -1096,6 +1207,34 @@ function filterNotes(tag, el) {
   document.querySelectorAll('[data-filter]').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
   renderNotesFeed(tag);
+}
+
+// ============================================================
+// SOFT DELETE
+// ============================================================
+async function softDeleteNote(noteId) {
+  if (!confirm('Delete this note? It will be removed from your feed.')) return;
+
+  const { error } = await sb.from('field_notes').update({
+    deleted_at: new Date().toISOString(),
+    deleted_by: authUser.id,
+    deleted_by_rep_id: currentUser.id
+  }).eq('id', noteId);
+
+  if (error) {
+    alert('Failed to delete note. Try again.');
+    console.error(error);
+    return;
+  }
+
+  // Update local state and re-render
+  const note = allNotes.find(n => n.id === noteId);
+  if (note) {
+    note.deleted_at = new Date().toISOString();
+    note.deleted_by = authUser.id;
+    note.deleted_by_rep_id = currentUser.id;
+  }
+  renderNotesFeed();
 }
 
 // ============================================================
