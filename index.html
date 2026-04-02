@@ -463,12 +463,17 @@
           <div class="form-group">
             <label class="form-label">Tags (optional)</label>
             <div class="tags-row">
-              <span class="tag-chip" data-tag="Surgeon Visit" onclick="toggleTag(this)">Surgeon Visit</span>
+              <span class="tag-chip" data-tag="Surgeon Interaction" onclick="toggleTag(this)">Surgeon Interaction</span>
               <span class="tag-chip" data-tag="Case Feedback" onclick="toggleTag(this)">Case Feedback</span>
               <span class="tag-chip" data-tag="Competitive Intel" onclick="toggleTag(this)">Competitive Intel</span>
               <span class="tag-chip" data-tag="Product Interest" onclick="toggleTag(this)">Product Interest</span>
               <span class="tag-chip" data-tag="Issue / Complaint" onclick="toggleTag(this)">Issue / Complaint</span>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Next Action (optional)</label>
+            <input type="text" id="nextAction" class="form-input" placeholder="e.g. Send brochure, Schedule lunch, Follow up after Thursday case...">
           </div>
 
           <div class="form-group">
@@ -484,7 +489,7 @@
       <div id="screen-feed" class="screen">
         <div class="filter-bar">
           <span class="filter-chip active" data-filter="all" onclick="filterNotes('all', this)">All</span>
-          <span class="filter-chip" data-filter="Surgeon Visit" onclick="filterNotes('Surgeon Visit', this)">Surgeon Visit</span>
+          <span class="filter-chip" data-filter="Surgeon Interaction" onclick="filterNotes('Surgeon Interaction', this)">Surgeon Interaction</span>
           <span class="filter-chip" data-filter="Case Feedback" onclick="filterNotes('Case Feedback', this)">Case Feedback</span>
           <span class="filter-chip" data-filter="Competitive Intel" onclick="filterNotes('Competitive Intel', this)">Competitive Intel</span>
           <span class="filter-chip" data-filter="Product Interest" onclick="filterNotes('Product Interest', this)">Product Interest</span>
@@ -755,13 +760,15 @@ async function submitNote(e) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
 
+  const nextAction = document.getElementById('nextAction').value.trim();
   const noteData = {
     rep_id: currentUser.id,
     surgeon_id: selectedSurgeon ? selectedSurgeon.id : null,
     subject_text: subjectInput.value.trim(),
     note_body: document.getElementById('noteBody').value.trim(),
     tags: selectedTags,
-    note_date: document.getElementById('noteDate').value
+    note_date: document.getElementById('noteDate').value,
+    next_action: nextAction || null
   };
 
   const { error } = await sb.from('field_notes').insert([noteData]);
@@ -849,6 +856,7 @@ function renderNotesFeed(filterTag = 'all') {
           ${escHtml(authorName)}${hospital ? ' · ' + escHtml(hospital) : ''}
         </div>
         <div class="note-card-body">${escHtml(n.note_body)}</div>
+        ${n.next_action ? `<div style="margin-top:8px;padding:8px 12px;background:var(--orange-100);border-radius:8px;font-size:13px;color:var(--orange-500);font-weight:600;">Next: ${escHtml(n.next_action)}</div>` : ''}
         ${n.tags && n.tags.length ? `
           <div class="note-card-tags">
             ${n.tags.map(t => `<span class="note-tag">${escHtml(t)}</span>`).join('')}
